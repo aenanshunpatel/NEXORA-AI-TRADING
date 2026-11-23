@@ -5,7 +5,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>NEXORA AI - Advanced Crypto Intelligence</title>
-
 <script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
 
 <style>
@@ -23,10 +22,7 @@ h2{font-size:19px}
 .green{color:#32dfa0}
 .chart,.analysis{margin-top:18px}
 .controls{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
-.controls button{
- background:#1b2a40;color:#dce8f8;border:1px solid #344966;
- border-radius:8px;padding:10px 13px;font-weight:bold;cursor:pointer
-}
+.controls button{background:#1b2a40;color:#dce8f8;border:1px solid #344966;border-radius:8px;padding:10px 13px;font-weight:bold;cursor:pointer}
 .controls button.active{background:#1679df;color:white;border-color:#1679df}
 #cryptoChart{width:100%;height:460px}
 .status{color:#32dfa0;font-size:13px}
@@ -42,14 +38,12 @@ footer{text-align:center;padding:30px;color:#8394aa;font-size:12px}
 </head>
 
 <body>
-
 <header>
  <div class="logo">✦ NEXORA AI</div>
  <p>ADVANCED CRYPTO TRADING ASSISTANT</p>
 </header>
 
 <main>
-
 <h2>Market Overview</h2>
 
 <div class="cards">
@@ -58,7 +52,6 @@ footer{text-align:center;padding:30px;color:#8394aa;font-size:12px}
   <div class="price" id="btc">$ --</div>
   <div class="green">BTC / USDT</div>
  </div>
-
  <div class="card">
   <div class="label">ETHEREUM · ETH</div>
   <div class="price" id="eth">$ --</div>
@@ -92,7 +85,6 @@ footer{text-align:center;padding:30px;color:#8394aa;font-size:12px}
  <h2>Market Structure Analysis</h2>
  <p class="status" id="structureStatus">Waiting for data...</p>
  <p id="structureResult">Market structure will appear here.</p>
-
  <div class="legend">
   <span>🟢 HH / Bullish BOS</span>
   <span>🔵 HL</span>
@@ -107,38 +99,93 @@ footer{text-align:center;padding:30px;color:#8394aa;font-size:12px}
  <p id="aiStatus">Advanced AI analysis module is being prepared.</p>
  <p class="label">Educational analysis only. No guaranteed signals or profits.</p>
 </div>
-
 </main>
 
 <footer>NEXORA AI · Crypto Intelligence Platform</footer>
 
 <script>
-
-// GLOBAL SETTINGS
 let currentPair="BTCUSDT";
 let currentTimeframe="5m";
 let candles=[];
 let candleSocket=null;
 let loadNumber=0;
 let loading=false;
+let priceSocket=null;
+let pricePollRunning=false;
 
 
-// PRICE FORMAT
+// PRICE DISPLAY
 function showPrice(id,value){
- document.getElementById(id).textContent =
- "$"+Number(value).toLocaleString("en-US",{
-  minimumFractionDigits:2,
-  maximumFractionDigits:2
- });
+ const number=Number(value);
+ if(!Number.isFinite(number) || number<=0) return;
+
+ document.getElementById(id).textContent=
+  "$"+number.toLocaleString("en-US",{
+   minimumFractionDigits:2,
+   maximumFractionDigits:2
+  });
 }
 
 
-// LIVE BTC AND ETH PRICES
+// BINANCE API BACKUP
+async function fetchFromBinance(path){
+ const hosts=[
+  "https://api.binance.com",
+  "https://api1.binance.com",
+  "https://api2.binance.com",
+  "https://api3.binance.com"
+ ];
+
+ let lastError;
+
+ for(const host of hosts){
+  try{
+   const response=await fetch(host+path,{cache:"no-store"});
+   if(!response.ok) throw new Error("HTTP "+response.status);
+   return await response.json();
+  }catch(error){
+   lastError=error;
+  }
+ }
+
+ throw lastError || new Error("All Binance servers unavailable");
+}
+
+
+// GET BTC AND ETH PRICES
+async function refreshPrices(){
+ if(pricePollRunning) return;
+ pricePollRunning=true;
+
+ try{
+  const results=await Promise.all([
+   fetchFromBinance("/api/v3/ticker/price?symbol=BTCUSDT"),
+   fetchFromBinance("/api/v3/ticker/price?symbol=ETHUSDT")
+  ]);
+
+  showPrice("btc",results[0].price);
+  showPrice("eth",results[1].price);
+
+ }catch(error){
+  console.log("Price backup error:",error);
+ }finally{
+  pricePollRunning=false;
+ }
+}
+
+
+// LIVE PRICE WEBSOCKET
 function connectLivePrices(){
+ if(priceSocket){
+  priceSocket.onclose=null;
+  priceSocket.close();
+ }
 
  const socket=new WebSocket(
   "wss://stream.binance.com:9443/stream?streams=btcusdt@trade/ethusdt@trade"
  );
+
+ priceSocket=socket;
 
  socket.onmessage=function(event){
   try{
@@ -148,14 +195,15 @@ function connectLivePrices(){
 
    if(trade.s==="BTCUSDT") showPrice("btc",trade.p);
    if(trade.s==="ETHUSDT") showPrice("eth",trade.p);
-
   }catch(error){
-   console.log("Price error:",error);
+   console.log("Price stream error:",error);
   }
  };
 
  socket.onclose=function(){
-  setTimeout(connectLivePrices,5000);
+  setTimeout(function(){
+   if(priceSocket===socket) connectLivePrices();
+  },5000);
  };
 
  socket.onerror=function(){
@@ -163,6 +211,10 @@ function connectLivePrices(){
  };
 }
 
+
+// START PRICE SYSTEM
+refreshPrices();
+setInterval(refreshPrices,5000);
 connectLivePrices();
 
 
@@ -201,17 +253,14 @@ const candleSeries=chart.addCandlestickSeries({
 });
 
 
-// MARKET STRUCTURE DETECTION
+// MARKET STRUCTURE
 function detectStructure(data){
-
  const markers=[];
  const pivots=[];
 
  if(data.length<7) return markers;
 
- // FIND CONFIRMED SWING POINTS
  for(let i=2;i<data.length-2;i++){
-
   const c=data[i];
 
   const swingHigh=
@@ -226,21 +275,8 @@ function detectStructure(data){
    c.low<data[i+1].low &&
    c.low<data[i+2].low;
 
-  if(swingHigh){
-   pivots.push({
-    index:i,
-    type:"HIGH",
-    price:c.high
-   });
-  }
-
-  if(swingLow){
-   pivots.push({
-    index:i,
-    type:"LOW",
-    price:c.low
-   });
-  }
+  if(swingHigh) pivots.push({index:i,type:"HIGH",price:c.high});
+  if(swingLow) pivots.push({index:i,type:"LOW",price:c.low});
  }
 
  pivots.sort((a,b)=>a.index-b.index);
@@ -250,25 +286,20 @@ function detectStructure(data){
  let trend=0;
  let highBroken=false;
  let lowBroken=false;
-
  let pivotPosition=0;
 
- // CHECK STRUCTURE AND BREAKS
  for(let i=4;i<data.length;i++){
 
-  // Only use swings confirmed by two later candles
   while(
    pivotPosition<pivots.length &&
    pivots[pivotPosition].index<=i-2
   ){
-
    const p=pivots[pivotPosition];
 
    if(p.type==="HIGH"){
-
     const label=lastHigh===null
-     ? "Swing High"
-     : p.price>lastHigh.price ? "HH":"LH";
+     ?"Swing High"
+     :p.price>lastHigh.price?"HH":"LH";
 
     markers.push({
      time:data[p.index].time,
@@ -280,12 +311,10 @@ function detectStructure(data){
 
     lastHigh=p;
     highBroken=false;
-
    }else{
-
     const label=lastLow===null
-     ? "Swing Low"
-     : p.price>lastLow.price ? "HL":"LL";
+     ?"Swing Low"
+     :p.price>lastLow.price?"HL":"LL";
 
     markers.push({
      time:data[p.index].time,
@@ -298,22 +327,13 @@ function detectStructure(data){
     lastLow=p;
     lowBroken=false;
    }
-
    pivotPosition++;
   }
 
   const candle=data[i];
 
-  // Bullish break
-  if(
-   lastHigh &&
-   !highBroken &&
-   candle.close>lastHigh.price
-  ){
-
-   const label=trend===-1
-    ? "Bullish CHoCH"
-    : "Bullish BOS";
+  if(lastHigh && !highBroken && candle.close>lastHigh.price){
+   const label=trend===-1?"Bullish CHoCH":"Bullish BOS";
 
    markers.push({
     time:candle.time,
@@ -327,16 +347,8 @@ function detectStructure(data){
    trend=1;
   }
 
-  // Bearish break
-  if(
-   lastLow &&
-   !lowBroken &&
-   candle.close<lastLow.price
-  ){
-
-   const label=trend===1
-    ? "Bearish CHoCH"
-    : "Bearish BOS";
+  if(lastLow && !lowBroken && candle.close<lastLow.price){
+   const label=trend===1?"Bearish CHoCH":"Bearish BOS";
 
    markers.push({
     time:candle.time,
@@ -352,34 +364,29 @@ function detectStructure(data){
  }
 
  markers.sort((a,b)=>a.time-b.time);
-
  return markers;
 }
 
 
-// UPDATE STRUCTURE DISPLAY
+// UPDATE STRUCTURE
 function updateStructure(){
-
  const markers=detectStructure(candles);
-
  candleSeries.setMarkers(markers);
 
  document.getElementById("structureStatus").textContent=
-  currentPair+" · "+currentTimeframe.toUpperCase()+
-  " · Structure calculated";
+  currentPair+" · "+currentTimeframe.toUpperCase()+" · Structure calculated";
 
  const latest=markers.slice(-8);
 
  document.getElementById("structureResult").textContent=
   latest.length
-   ? latest.map(m=>m.text).join("  |  ")
-   : "Waiting for confirmed swing points and breakouts...";
+   ?latest.map(m=>m.text).join(" | ")
+   :"Waiting for confirmed swing points and breakouts...";
 }
 
 
 // LOAD CHART DATA
 async function loadCandles(){
-
  const thisLoad=++loadNumber;
  loading=true;
 
@@ -399,18 +406,11 @@ async function loadCandles(){
   "Loading "+currentPair+" "+currentTimeframe+"...";
 
  try{
+  const path=
+   "/api/v3/klines?symbol="+currentPair+
+   "&interval="+currentTimeframe+"&limit=500";
 
-  const url=
-   "https://api.binance.com/api/v3/klines?symbol="+
-   currentPair+"&interval="+currentTimeframe+"&limit=500";
-
-  const response=await fetch(url);
-
-  if(!response.ok){
-   throw new Error("Market data unavailable");
-  }
-
-  const data=await response.json();
+  const data=await fetchFromBinance(path);
 
   if(thisLoad!==loadNumber) return;
 
@@ -424,7 +424,6 @@ async function loadCandles(){
 
   candleSeries.setData(candles);
   chart.timeScale().fitContent();
-
   updateStructure();
 
   document.getElementById("chartStatus").textContent=
@@ -433,17 +432,13 @@ async function loadCandles(){
   startCandleStream(thisLoad);
 
  }catch(error){
-
   if(thisLoad===loadNumber){
    document.getElementById("chartStatus").textContent=
     "Unable to load market data. Please try again.";
-
    document.getElementById("structureStatus").textContent=
     "Market data unavailable.";
-
    console.log("Chart error:",error);
   }
-
  }finally{
   if(thisLoad===loadNumber) loading=false;
  }
@@ -452,7 +447,6 @@ async function loadCandles(){
 
 // LIVE CANDLE STREAM
 function startCandleStream(thisLoad){
-
  const socket=new WebSocket(
   "wss://stream.binance.com:9443/ws/"+
   currentPair.toLowerCase()+"@kline_"+currentTimeframe
@@ -461,14 +455,11 @@ function startCandleStream(thisLoad){
  candleSocket=socket;
 
  socket.onmessage=function(event){
-
   if(thisLoad!==loadNumber) return;
 
   try{
-
    const message=JSON.parse(event.data);
    const k=message.k;
-
    if(!k) return;
 
    const candle={
@@ -489,10 +480,7 @@ function startCandleStream(thisLoad){
 
    candleSeries.update(candle);
 
-   // Recalculate after candle closes
-   if(k.x){
-    updateStructure();
-   }
+   if(k.x) updateStructure();
 
   }catch(error){
    console.log("Candle stream error:",error);
@@ -517,9 +505,7 @@ function startCandleStream(thisLoad){
 
 // PAIR SWITCH
 document.querySelectorAll("#pairControls button").forEach(button=>{
-
  button.addEventListener("click",function(){
-
   if(currentPair===this.dataset.pair) return;
 
   currentPair=this.dataset.pair;
@@ -529,7 +515,6 @@ document.querySelectorAll("#pairControls button").forEach(button=>{
   });
 
   this.classList.add("active");
-
   loadCandles();
  });
 });
@@ -537,9 +522,7 @@ document.querySelectorAll("#pairControls button").forEach(button=>{
 
 // TIMEFRAME SWITCH
 document.querySelectorAll("#timeControls button").forEach(button=>{
-
  button.addEventListener("click",function(){
-
   if(currentTimeframe===this.dataset.time) return;
 
   currentTimeframe=this.dataset.time;
@@ -549,13 +532,12 @@ document.querySelectorAll("#timeControls button").forEach(button=>{
   });
 
   this.classList.add("active");
-
   loadCandles();
  });
 });
 
 
-// RESIZE CHART
+// RESIZE
 window.addEventListener("resize",function(){
  chart.applyOptions({
   width:chartElement.clientWidth
@@ -563,10 +545,9 @@ window.addEventListener("resize",function(){
 });
 
 
-// START
+// START CHART
 loadCandles();
-
 </script>
-
 </body>
-</html>
+ </html>
+ 
