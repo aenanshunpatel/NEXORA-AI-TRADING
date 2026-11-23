@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -24,15 +23,40 @@ h2{font-size:19px}
 .controls{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
 .controls button{background:#1b2a40;color:#dce8f8;border:1px solid #344966;border-radius:8px;padding:10px 13px;font-weight:bold;cursor:pointer}
 .controls button.active{background:#1679df;color:white;border-color:#1679df}
-#cryptoChart{width:100%;height:460px}
+
+#cryptoChart{
+ width:100%;
+ height:460px;
+ position:relative;
+}
+
+#priceCountdown{
+ position:absolute;
+ right:0;
+ z-index:20;
+ transform:translateY(-50%);
+ padding:5px 7px;
+ border-radius:4px 0 0 4px;
+ color:white;
+ background:#168b69;
+ font-size:11px;
+ font-weight:bold;
+ white-space:nowrap;
+ pointer-events:none;
+ display:none;
+ box-shadow:0 2px 8px #0006;
+}
+
 .status{color:#32dfa0;font-size:13px}
 .legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px;font-size:12px;color:#c6d3e5}
 footer{text-align:center;padding:30px;color:#8394aa;font-size:12px}
+
 @media(max-width:500px){
  main{padding:11px}
  .price{font-size:19px}
  #cryptoChart{height:360px}
  .controls button{padding:9px 11px}
+ #priceCountdown{font-size:10px;padding:4px 5px}
 }
 </style>
 </head>
@@ -249,8 +273,104 @@ const candleSeries=chart.addCandlestickSeries({
  borderUpColor:"#22c993",
  borderDownColor:"#ef5350",
  wickUpColor:"#22c993",
- wickDownColor:"#ef5350"
+ wickDownColor:"#ef5350",
+
+ // Native last-price label hide.
+ // Our price + countdown label replaces it.
+ lastValueVisible:false,
+ priceLineVisible:false
 });
+
+
+// CREATE PRICE + COUNTDOWN LABEL
+const priceCountdown=document.createElement("div");
+priceCountdown.id="priceCountdown";
+chartElement.appendChild(priceCountdown);
+
+
+// TIMEFRAME DURATION
+function getTimeframeMilliseconds(){
+ const durations={
+  "1m":60*1000,
+  "5m":5*60*1000,
+  "15m":15*60*1000,
+  "30m":30*60*1000,
+  "1h":60*60*1000,
+  "4h":4*60*60*1000,
+  "1d":24*60*60*1000
+ };
+
+ return durations[currentTimeframe] || 5*60*1000;
+}
+
+
+// FORMAT COUNTDOWN
+function formatCountdown(milliseconds){
+ let seconds=Math.max(0,Math.ceil(milliseconds/1000));
+
+ const hours=Math.floor(seconds/3600);
+ seconds%=3600;
+
+ const minutes=Math.floor(seconds/60);
+ seconds%=60;
+
+ const mm=String(minutes).padStart(2,"0");
+ const ss=String(seconds).padStart(2,"0");
+
+ if(hours>0){
+  return String(hours).padStart(2,"0")+":"+mm+":"+ss;
+ }
+
+ return mm+":"+ss;
+}
+
+
+// UPDATE PRICE + COUNTDOWN LABEL
+function updatePriceCountdown(){
+ if(!candles.length){
+  priceCountdown.style.display="none";
+  return;
+ }
+
+ const last=candles[candles.length-1];
+ const duration=getTimeframeMilliseconds();
+
+ // Calculate remaining time using candle open time.
+ const candleOpenTime=last.time*1000;
+ const elapsed=Date.now()-candleOpenTime;
+
+ let remaining=duration-(elapsed%duration);
+
+ if(remaining<=0) remaining=duration;
+
+ const countdown=formatCountdown(remaining);
+
+ const price=Number(last.close).toLocaleString("en-US",{
+  minimumFractionDigits:2,
+  maximumFractionDigits:2
+ });
+
+ // Position label at current candle price.
+ const y=candleSeries.priceToCoordinate(last.close);
+
+ if(y===null || !Number.isFinite(y)){
+  priceCountdown.style.display="none";
+  return;
+ }
+
+ priceCountdown.textContent="$"+price+"  "+countdown;
+
+ priceCountdown.style.top=y+"px";
+
+ priceCountdown.style.background=
+  last.close>=last.open?"#168b69":"#c64250";
+
+ priceCountdown.style.display="block";
+}
+
+
+// UPDATE COUNTDOWN EVERY SECOND
+setInterval(updatePriceCountdown,1000);
 
 
 // MARKET STRUCTURE
@@ -390,6 +510,8 @@ async function loadCandles(){
  const thisLoad=++loadNumber;
  loading=true;
 
+ priceCountdown.style.display="none";
+
  if(candleSocket){
   candleSocket.onclose=null;
   candleSocket.close();
@@ -425,6 +547,7 @@ async function loadCandles(){
   candleSeries.setData(candles);
   chart.timeScale().fitContent();
   updateStructure();
+  updatePriceCountdown();
 
   document.getElementById("chartStatus").textContent=
    currentPair+" · "+currentTimeframe.toUpperCase()+" · Live";
@@ -479,6 +602,9 @@ function startCandleStream(thisLoad){
    }
 
    candleSeries.update(candle);
+
+   // Update price + countdown with live candle.
+   updatePriceCountdown();
 
    if(k.x) updateStructure();
 
@@ -542,6 +668,8 @@ window.addEventListener("resize",function(){
  chart.applyOptions({
   width:chartElement.clientWidth
  });
+
+ updatePriceCountdown();
 });
 
 
@@ -550,4 +678,3 @@ loadCandles();
 </script>
 </body>
  </html>
- 
