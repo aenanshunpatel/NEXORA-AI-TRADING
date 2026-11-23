@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -137,6 +138,10 @@ let loading=false;
 let priceSocket=null;
 let pricePollRunning=false;
 
+// LIVE PRICE LINE VARIABLES
+let livePriceLine=null;
+let previousLivePrice=null;
+
 
 // PRICE DISPLAY
 function showPrice(id,value){
@@ -219,6 +224,7 @@ function connectLivePrices(){
 
    if(trade.s==="BTCUSDT") showPrice("btc",trade.p);
    if(trade.s==="ETHUSDT") showPrice("eth",trade.p);
+
   }catch(error){
    console.log("Price stream error:",error);
   }
@@ -275,8 +281,6 @@ const candleSeries=chart.addCandlestickSeries({
  wickUpColor:"#22c993",
  wickDownColor:"#ef5350",
 
- // Native last-price label hide.
- // Our price + countdown label replaces it.
  lastValueVisible:false,
  priceLineVisible:false
 });
@@ -286,6 +290,31 @@ const candleSeries=chart.addCandlestickSeries({
 const priceCountdown=document.createElement("div");
 priceCountdown.id="priceCountdown";
 chartElement.appendChild(priceCountdown);
+
+
+// CREATE OR UPDATE LIVE DOTTED PRICE LINE
+function updateLivePriceLine(price,isUp){
+
+ if(!Number.isFinite(price) || price<=0) return;
+
+ const lineColor=isUp?"#22dfa0":"#ef5350";
+
+ // Remove previous line
+ if(livePriceLine){
+  candleSeries.removePriceLine(livePriceLine);
+ }
+
+ // Create new dotted live line
+ livePriceLine=candleSeries.createPriceLine({
+  price:price,
+  color:lineColor,
+  lineWidth:1,
+  lineStyle:LightweightCharts.LineStyle.Dotted,
+  axisLabelVisible:false,
+  title:""
+ });
+
+}
 
 
 // TIMEFRAME DURATION
@@ -327,6 +356,7 @@ function formatCountdown(milliseconds){
 
 // UPDATE PRICE + COUNTDOWN LABEL
 function updatePriceCountdown(){
+
  if(!candles.length){
   priceCountdown.style.display="none";
   return;
@@ -335,7 +365,7 @@ function updatePriceCountdown(){
  const last=candles[candles.length-1];
  const duration=getTimeframeMilliseconds();
 
- // Calculate remaining time using candle open time.
+ // Candle countdown
  const candleOpenTime=last.time*1000;
  const elapsed=Date.now()-candleOpenTime;
 
@@ -345,25 +375,39 @@ function updatePriceCountdown(){
 
  const countdown=formatCountdown(remaining);
 
- const price=Number(last.close).toLocaleString("en-US",{
+ const price=Number(last.close);
+
+ // Determine live direction
+ const isUp=previousLivePrice===null
+  ?price>=last.open
+  :price>=previousLivePrice;
+
+ // Update dotted line and remember price
+ updateLivePriceLine(price,isUp);
+ previousLivePrice=price;
+
+ // Format live price
+ const formattedPrice=price.toLocaleString("en-US",{
   minimumFractionDigits:2,
   maximumFractionDigits:2
  });
 
- // Position label at current candle price.
- const y=candleSeries.priceToCoordinate(last.close);
+ // Find current price position
+ const y=candleSeries.priceToCoordinate(price);
 
  if(y===null || !Number.isFinite(y)){
   priceCountdown.style.display="none";
   return;
  }
 
- priceCountdown.textContent="$"+price+"  "+countdown;
+ // Display live price and countdown
+ priceCountdown.textContent="$"+formattedPrice+"  "+countdown;
 
  priceCountdown.style.top=y+"px";
 
- priceCountdown.style.background=
-  last.close>=last.open?"#168b69":"#c64250";
+ priceCountdown.style.background=isUp
+  ?"#168b69"
+  :"#c64250";
 
  priceCountdown.style.display="block";
 }
@@ -431,6 +475,7 @@ function detectStructure(data){
 
     lastHigh=p;
     highBroken=false;
+
    }else{
     const label=lastLow===null
      ?"Swing Low"
@@ -447,6 +492,7 @@ function detectStructure(data){
     lastLow=p;
     lowBroken=false;
    }
+
    pivotPosition++;
   }
 
@@ -512,6 +558,14 @@ async function loadCandles(){
 
  priceCountdown.style.display="none";
 
+ // Reset old live line and price
+ if(livePriceLine){
+  candleSeries.removePriceLine(livePriceLine);
+  livePriceLine=null;
+ }
+
+ previousLivePrice=null;
+
  if(candleSocket){
   candleSocket.onclose=null;
   candleSocket.close();
@@ -546,6 +600,7 @@ async function loadCandles(){
 
   candleSeries.setData(candles);
   chart.timeScale().fitContent();
+
   updateStructure();
   updatePriceCountdown();
 
@@ -558,8 +613,10 @@ async function loadCandles(){
   if(thisLoad===loadNumber){
    document.getElementById("chartStatus").textContent=
     "Unable to load market data. Please try again.";
+
    document.getElementById("structureStatus").textContent=
     "Market data unavailable.";
+
    console.log("Chart error:",error);
   }
  }finally{
@@ -603,7 +660,7 @@ function startCandleStream(thisLoad){
 
    candleSeries.update(candle);
 
-   // Update price + countdown with live candle.
+   // Update live price line and countdown
    updatePriceCountdown();
 
    if(k.x) updateStructure();
@@ -675,6 +732,8 @@ window.addEventListener("resize",function(){
 
 // START CHART
 loadCandles();
+
 </script>
 </body>
  </html>
+ 
