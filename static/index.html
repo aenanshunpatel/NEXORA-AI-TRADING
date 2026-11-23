@@ -36,7 +36,7 @@ h2{font-size:19px}
  grid-template-columns:repeat(2,1fr);
  gap:12px;
 }
-.card{
+.card,.chart,.analysis{
  background:#111d30;
  border:1px solid #263b55;
  border-radius:14px;
@@ -49,30 +49,14 @@ h2{font-size:19px}
  margin:10px 0;
 }
 .green{color:#32dfa0}
-.chart{
- background:#111d30;
- border-radius:14px;
- padding:16px;
- margin-top:18px;
-}
-#tradingview_chart{
- height:450px;
+.chart,.analysis{margin-top:18px}
+#cryptoChart{
+ height:430px;
  width:100%;
 }
-.analysis{
- background:#111d30;
- border:1px solid #263b55;
- border-radius:14px;
- padding:18px;
- margin-top:18px;
-}
-button{
- background:#1679df;
- color:white;
- border:0;
- border-radius:9px;
- padding:12px 18px;
- font-weight:bold;
+.status{
+ color:#32dfa0;
+ font-size:13px;
 }
 footer{
  text-align:center;
@@ -82,9 +66,11 @@ footer{
 }
 @media(max-width:400px){
  .price{font-size:19px}
- #tradingview_chart{height:380px}
+ #cryptoChart{height:350px}
 }
 </style>
+
+<script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 
 <body>
@@ -113,78 +99,54 @@ footer{
 </div>
 
 <div class="chart">
- <h2>BTC Live Trading Chart</h2>
- <div id="tradingview_chart"></div>
- <p class="label">Live chart powered by TradingView</p>
+ <h2>BTC Live Trading Chart · 5m</h2>
+ <div id="cryptoChart"></div>
+ <p class="label">Live market candles · Binance data</p>
+</div>
+
+<div class="analysis">
+ <h2>Market Structure Analysis</h2>
+ <p class="status" id="structureStatus">
+  Waiting for market data...
+ </p>
+ <p id="structureResult">
+  Market structure will appear here.
+ </p>
+ <p class="label">
+  HH = Higher High · HL = Higher Low<br>
+  LH = Lower High · LL = Lower Low
+ </p>
 </div>
 
 <div class="analysis">
  <h2>AI Market Analysis</h2>
- <p id="status">Analysis engine is being prepared.</p>
- <button onclick="alert('AI Analysis module is coming soon!')">
-  Start AI Analysis
- </button>
+ <p id="aiStatus">
+  Market analysis engine is being prepared.
+ </p>
+ <p class="label">
+  Analysis is for learning purposes only. No trading signals or profit guarantees.
+ </p>
 </div>
 
 </main>
 
 <footer>NEXORA AI · Crypto Intelligence Platform</footer>
 
+<script src="/static/market_structure.js"></script>
+
 <script>
 
-// TRADINGVIEW LIVE CHART
-const tvScript = document.createElement("script");
-tvScript.src = "https://s3.tradingview.com/tv.js";
-
-tvScript.onload = function(){
- new TradingView.widget({
-  autosize:true,
-  symbol:"BINANCE:BTCUSDT",
-  interval:"1",
-  timezone:"Asia/Kolkata",
-  theme:"dark",
-  style:"1",
-  locale:"en",
-  enable_publishing:false,
-  allow_symbol_change:true,
-  container_id:"tradingview_chart"
- });
-};
-
-document.head.appendChild(tvScript);
-
-
-// PRICE DISPLAY
+// PRICE FORMAT
 function showPrice(id,value){
  document.getElementById(id).textContent =
-  "$"+Number(value).toLocaleString("en-US",{
-   minimumFractionDigits:2,
-   maximumFractionDigits:2
-  });
+ "$"+Number(value).toLocaleString("en-US",{
+  minimumFractionDigits:2,
+  maximumFractionDigits:2
+ });
 }
 
 
-// COINGECKO BACKUP PRICE
-async function backupPrices(){
- try{
-  const response=await fetch(
-   "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin%2Cethereum&vs_currencies=usd"
-  );
-
-  if(!response.ok) throw new Error("Backup unavailable");
-
-  const data=await response.json();
-
-  if(data.bitcoin?.usd) showPrice("btc",data.bitcoin.usd);
-  if(data.ethereum?.usd) showPrice("eth",data.ethereum.usd);
-
- }catch(error){
-  console.log("Backup Price Error:",error);
- }
-}
-
-
-// BINANCE REAL-TIME PRICE
+// LIVE BTC AND ETH PRICES
 function connectLivePrices(){
 
  const socket=new WebSocket(
@@ -198,11 +160,16 @@ function connectLivePrices(){
 
    if(!trade || !trade.s || !trade.p) return;
 
-   if(trade.s==="BTCUSDT") showPrice("btc",trade.p);
-   if(trade.s==="ETHUSDT") showPrice("eth",trade.p);
+   if(trade.s==="BTCUSDT"){
+    showPrice("btc",trade.p);
+   }
+
+   if(trade.s==="ETHUSDT"){
+    showPrice("eth",trade.p);
+   }
 
   }catch(error){
-   console.log("Live Price Error:",error);
+   console.log("Price error:",error);
   }
  };
 
@@ -215,15 +182,202 @@ function connectLivePrices(){
  };
 }
 
-
-// START PRICE SYSTEM
-backupPrices();
 connectLivePrices();
-setInterval(backupPrices,30000);
+
+
+// CREATE BTC CHART
+const chartElement=document.getElementById("cryptoChart");
+
+const chart=LightweightCharts.createChart(chartElement,{
+ width:chartElement.clientWidth,
+ height:430,
+ layout:{
+  background:{color:"#111d30"},
+  textColor:"#d9e5f5"
+ },
+ grid:{
+  vertLines:{color:"#1c2b40"},
+  horzLines:{color:"#1c2b40"}
+ },
+ rightPriceScale:{
+  borderColor:"#33445c"
+ },
+ timeScale:{
+  borderColor:"#33445c",
+  timeVisible:true,
+  secondsVisible:false
+ }
+});
+
+const candleSeries=chart.addCandlestickSeries({
+ upColor:"#22c993",
+ downColor:"#ef5350",
+ borderUpColor:"#22c993",
+ borderDownColor:"#ef5350",
+ wickUpColor:"#22c993",
+ wickDownColor:"#ef5350"
+});
+
+let candles=[];
+
+
+// LOAD HISTORICAL CANDLES
+async function loadCandles(){
+
+ try{
+
+  document.getElementById("structureStatus").textContent =
+   "Loading BTC market data...";
+
+  const response=await fetch(
+   "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=5m&limit=500"
+  );
+
+  if(!response.ok){
+   throw new Error("Market data unavailable");
+  }
+
+  const data=await response.json();
+
+  candles=data.map(item=>({
+   time:Math.floor(item[0]/1000),
+   open:Number(item[1]),
+   high:Number(item[2]),
+   low:Number(item[3]),
+   close:Number(item[4])
+  }));
+
+  candleSeries.setData(candles);
+
+  chart.timeScale().fitContent();
+
+  updateMarketStructure();
+
+  connectCandleStream();
+
+ }catch(error){
+
+  document.getElementById("structureStatus").textContent =
+   "Unable to load market data. Please refresh.";
+
+  console.log("Chart error:",error);
+
+ }
+}
+
+
+// MARKET STRUCTURE
+function updateMarketStructure(){
+
+ if(typeof window.findMarketStructure!=="function"){
+  document.getElementById("structureStatus").textContent =
+   "Market structure file not loaded.";
+  return;
+ }
+
+ const results=window.findMarketStructure(candles);
+
+ const markers=results.map(item=>({
+
+  time:candles[item.index].time,
+
+  position:item.type==="HH" || item.type==="LH"
+   ? "aboveBar"
+   : "belowBar",
+
+  color:item.type==="HH" ? "#22c993" :
+        item.type==="HL" ? "#66d9ff" :
+        item.type==="LH" ? "#ffb74d" :
+        item.type==="LL" ? "#ef5350" :
+        "#ffffff",
+
+  shape:"circle",
+
+  text:item.type
+
+ }));
+
+ candleSeries.setMarkers(markers);
+
+ const latest=results.slice(-6);
+
+ document.getElementById("structureStatus").textContent =
+  "Market structure updated · BTC 5m";
+
+ document.getElementById("structureResult").textContent =
+  latest.length
+   ? latest.map(item=>item.type).join("  ·  ")
+   : "Waiting for confirmed swing points...";
+}
+
+
+// LIVE BTC CANDLES
+function connectCandleStream(){
+
+ const socket=new WebSocket(
+  "wss://stream.binance.com:9443/ws/btcusdt@kline_5m"
+ );
+
+ socket.onmessage=function(event){
+
+  try{
+
+   const message=JSON.parse(event.data);
+   const k=message.k;
+
+   if(!k) return;
+
+   const candle={
+    time:Math.floor(k.t/1000),
+    open:Number(k.o),
+    high:Number(k.h),
+    low:Number(k.l),
+    close:Number(k.c)
+   };
+
+   const last=candles[candles.length-1];
+
+   if(last && last.time===candle.time){
+    candles[candles.length-1]=candle;
+   }else{
+    candles.push(candle);
+   }
+
+   candleSeries.update(candle);
+
+   // Update structure when a candle closes
+   if(k.x){
+    updateMarketStructure();
+   }
+
+  }catch(error){
+   console.log("Candle error:",error);
+  }
+ };
+
+ socket.onclose=function(){
+  setTimeout(loadCandles,5000);
+ };
+
+ socket.onerror=function(){
+  socket.close();
+ };
+}
+
+
+// RESPONSIVE CHART
+window.addEventListener("resize",function(){
+ chart.applyOptions({
+  width:chartElement.clientWidth
+ });
+});
+
+
+// START
+loadCandles();
 
 </script>
 
-<script src="/static/market_structure.js"></script>
-
 </body>
-</html>
+ </html>
+ 
