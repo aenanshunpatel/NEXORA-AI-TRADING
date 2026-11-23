@@ -6,6 +6,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>NEXORA AI - Crypto Intelligence</title>
 
+<script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
+
 <style>
 *{box-sizing:border-box}
 body{
@@ -25,11 +27,7 @@ header{
  color:#66d9ff;
 }
 header p{color:#9baec7;font-size:13px}
-main{
- padding:18px;
- max-width:1100px;
- margin:auto;
-}
+main{padding:18px;max-width:1200px;margin:auto}
 h2{font-size:19px}
 .cards{
  display:grid;
@@ -43,34 +41,47 @@ h2{font-size:19px}
  padding:16px;
 }
 .label{color:#9baec7;font-size:12px}
-.price{
- font-size:23px;
- font-weight:bold;
- margin:10px 0;
-}
+.price{font-size:23px;font-weight:bold;margin:10px 0}
 .green{color:#32dfa0}
 .chart,.analysis{margin-top:18px}
+.timeframes{
+ display:flex;
+ flex-wrap:wrap;
+ gap:7px;
+ margin:14px 0;
+}
+.timeframes button{
+ background:#1b2a40;
+ color:#c8d6e9;
+ border:1px solid #344966;
+ border-radius:7px;
+ padding:10px 13px;
+ cursor:pointer;
+ font-weight:bold;
+}
+.timeframes button.active{
+ background:#1679df;
+ color:white;
+ border-color:#1679df;
+}
 #cryptoChart{
- height:430px;
+ height:460px;
  width:100%;
 }
-.status{
- color:#32dfa0;
- font-size:13px;
-}
+.status{color:#32dfa0;font-size:13px}
 footer{
  text-align:center;
  padding:30px;
  color:#8394aa;
  font-size:12px;
 }
-@media(max-width:400px){
+@media(max-width:500px){
+ main{padding:12px}
  .price{font-size:19px}
- #cryptoChart{height:350px}
+ #cryptoChart{height:370px}
+ .timeframes button{padding:9px 11px}
 }
 </style>
-
-<script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 
 <body>
@@ -99,19 +110,26 @@ footer{
 </div>
 
 <div class="chart">
- <h2>BTC Live Trading Chart · 5m</h2>
+ <h2>BTC Live Trading Chart</h2>
+
+ <div class="timeframes" id="timeframes">
+  <button data-time="1m">1m</button>
+  <button data-time="5m" class="active">5m</button>
+  <button data-time="15m">15m</button>
+  <button data-time="30m">30m</button>
+  <button data-time="1h">1H</button>
+  <button data-time="4h">4H</button>
+  <button data-time="1d">1D</button>
+ </div>
+
  <div id="cryptoChart"></div>
- <p class="label">Live market candles · Binance data</p>
+ <p class="label" id="chartStatus">Loading BTC market data...</p>
 </div>
 
 <div class="analysis">
  <h2>Market Structure Analysis</h2>
- <p class="status" id="structureStatus">
-  Waiting for market data...
- </p>
- <p id="structureResult">
-  Market structure will appear here.
- </p>
+ <p class="status" id="structureStatus">Waiting for market data...</p>
+ <p id="structureResult">Market structure will appear here.</p>
  <p class="label">
   HH = Higher High · HL = Higher Low<br>
   LH = Lower High · LL = Lower Low
@@ -120,11 +138,9 @@ footer{
 
 <div class="analysis">
  <h2>AI Market Analysis</h2>
- <p id="aiStatus">
-  Market analysis engine is being prepared.
- </p>
+ <p id="aiStatus">AI analysis module is being prepared.</p>
  <p class="label">
-  Analysis is for learning purposes only. No trading signals or profit guarantees.
+  Educational analysis only. No guaranteed trading signals or profits.
  </p>
 </div>
 
@@ -136,7 +152,7 @@ footer{
 
 <script>
 
-// PRICE FORMAT
+// PRICE DISPLAY
 function showPrice(id,value){
  document.getElementById(id).textContent =
  "$"+Number(value).toLocaleString("en-US",{
@@ -160,13 +176,8 @@ function connectLivePrices(){
 
    if(!trade || !trade.s || !trade.p) return;
 
-   if(trade.s==="BTCUSDT"){
-    showPrice("btc",trade.p);
-   }
-
-   if(trade.s==="ETHUSDT"){
-    showPrice("eth",trade.p);
-   }
+   if(trade.s==="BTCUSDT") showPrice("btc",trade.p);
+   if(trade.s==="ETHUSDT") showPrice("eth",trade.p);
 
   }catch(error){
    console.log("Price error:",error);
@@ -185,12 +196,12 @@ function connectLivePrices(){
 connectLivePrices();
 
 
-// CREATE BTC CHART
+// CREATE CHART
 const chartElement=document.getElementById("cryptoChart");
 
 const chart=LightweightCharts.createChart(chartElement,{
  width:chartElement.clientWidth,
- height:430,
+ height:460,
  layout:{
   background:{color:"#111d30"},
   textColor:"#d9e5f5"
@@ -206,6 +217,9 @@ const chart=LightweightCharts.createChart(chartElement,{
   borderColor:"#33445c",
   timeVisible:true,
   secondsVisible:false
+ },
+ crosshair:{
+  mode:LightweightCharts.CrosshairMode.Normal
  }
 });
 
@@ -219,51 +233,9 @@ const candleSeries=chart.addCandlestickSeries({
 });
 
 let candles=[];
-
-
-// LOAD HISTORICAL CANDLES
-async function loadCandles(){
-
- try{
-
-  document.getElementById("structureStatus").textContent =
-   "Loading BTC market data...";
-
-  const response=await fetch(
-   "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=5m&limit=500"
-  );
-
-  if(!response.ok){
-   throw new Error("Market data unavailable");
-  }
-
-  const data=await response.json();
-
-  candles=data.map(item=>({
-   time:Math.floor(item[0]/1000),
-   open:Number(item[1]),
-   high:Number(item[2]),
-   low:Number(item[3]),
-   close:Number(item[4])
-  }));
-
-  candleSeries.setData(candles);
-
-  chart.timeScale().fitContent();
-
-  updateMarketStructure();
-
-  connectCandleStream();
-
- }catch(error){
-
-  document.getElementById("structureStatus").textContent =
-   "Unable to load market data. Please refresh.";
-
-  console.log("Chart error:",error);
-
- }
-}
+let currentTimeframe="5m";
+let candleSocket=null;
+let loading=false;
 
 
 // MARKET STRUCTURE
@@ -278,31 +250,27 @@ function updateMarketStructure(){
  const results=window.findMarketStructure(candles);
 
  const markers=results.map(item=>({
-
   time:candles[item.index].time,
-
-  position:item.type==="HH" || item.type==="LH"
-   ? "aboveBar"
-   : "belowBar",
-
-  color:item.type==="HH" ? "#22c993" :
-        item.type==="HL" ? "#66d9ff" :
-        item.type==="LH" ? "#ffb74d" :
-        item.type==="LL" ? "#ef5350" :
-        "#ffffff",
-
+  position:
+   item.type==="HH" || item.type==="LH"
+    ? "aboveBar"
+    : "belowBar",
+  color:
+   item.type==="HH" ? "#22c993" :
+   item.type==="HL" ? "#66d9ff" :
+   item.type==="LH" ? "#ffb74d" :
+   item.type==="LL" ? "#ef5350" :
+   "#ffffff",
   shape:"circle",
-
   text:item.type
-
  }));
 
  candleSeries.setMarkers(markers);
 
- const latest=results.slice(-6);
+ const latest=results.slice(-8);
 
  document.getElementById("structureStatus").textContent =
-  "Market structure updated · BTC 5m";
+  "Structure updated · BTC "+currentTimeframe.toUpperCase();
 
  document.getElementById("structureResult").textContent =
   latest.length
@@ -311,12 +279,82 @@ function updateMarketStructure(){
 }
 
 
-// LIVE BTC CANDLES
-function connectCandleStream(){
+// LOAD SELECTED TIMEFRAME
+async function loadCandles(){
+
+ if(loading) return;
+ loading=true;
+
+ if(candleSocket){
+  candleSocket.onclose=null;
+  candleSocket.close();
+  candleSocket=null;
+ }
+
+ candles=[];
+ candleSeries.setData([]);
+
+ document.getElementById("chartStatus").textContent =
+  "Loading "+currentTimeframe.toUpperCase()+" candles...";
+
+ document.getElementById("structureStatus").textContent =
+  "Calculating market structure...";
+
+ try{
+
+  const response=await fetch(
+   "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval="+currentTimeframe+"&limit=500"
+  );
+
+  if(!response.ok){
+   throw new Error("Binance data unavailable");
+  }
+
+  const data=await response.json();
+
+  candles=data.map(item=>({
+   time:Math.floor(item[0]/1000),
+   open:Number(item[1]),
+   high:Number(item[2]),
+   low:Number(item[3]),
+   close:Number(item[4])
+  }));
+
+  candleSeries.setData(candles);
+  chart.timeScale().fitContent();
+
+  document.getElementById("chartStatus").textContent =
+   "Live BTC/USDT · "+currentTimeframe.toUpperCase();
+
+  updateMarketStructure();
+
+  startCandleStream();
+
+ }catch(error){
+
+  document.getElementById("chartStatus").textContent =
+   "Unable to load candles. Please try again.";
+
+  document.getElementById("structureStatus").textContent =
+   "Market data unavailable.";
+
+  console.log("Chart error:",error);
+
+ }finally{
+  loading=false;
+ }
+
+}
+
+
+// LIVE CANDLE STREAM
+function startCandleStream(){
 
  const socket=new WebSocket(
-  "wss://stream.binance.com:9443/ws/btcusdt@kline_5m"
+  "wss://stream.binance.com:9443/ws/btcusdt@kline_"+currentTimeframe
  );
+
+ candleSocket=socket;
 
  socket.onmessage=function(event){
 
@@ -345,24 +383,55 @@ function connectCandleStream(){
 
    candleSeries.update(candle);
 
-   // Update structure when a candle closes
    if(k.x){
     updateMarketStructure();
    }
 
   }catch(error){
-   console.log("Candle error:",error);
+   console.log("Candle stream error:",error);
   }
+
  };
 
  socket.onclose=function(){
-  setTimeout(loadCandles,5000);
+  if(candleSocket===socket){
+   setTimeout(function(){
+    if(!loading && candleSocket===socket){
+     startCandleStream();
+    }
+   },5000);
+  }
  };
 
  socket.onerror=function(){
   socket.close();
  };
+
 }
+
+
+// TIMEFRAME BUTTONS
+document.querySelectorAll("#timeframes button").forEach(button=>{
+
+ button.addEventListener("click",function(){
+
+  const selected=this.dataset.time;
+
+  if(selected===currentTimeframe) return;
+
+  currentTimeframe=selected;
+
+  document.querySelectorAll("#timeframes button").forEach(btn=>{
+   btn.classList.remove("active");
+  });
+
+  this.classList.add("active");
+
+  loadCandles();
+
+ });
+
+});
 
 
 // RESPONSIVE CHART
