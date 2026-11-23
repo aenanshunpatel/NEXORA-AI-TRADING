@@ -33,11 +33,11 @@ h2{font-size:19px}
 
 #priceCountdown{
  position:absolute;
- right:0;
+ top:8px;
+ right:8px;
  z-index:20;
- transform:translateY(-50%);
- padding:5px 7px;
- border-radius:4px 0 0 4px;
+ padding:6px 9px;
+ border-radius:5px;
  color:white;
  background:#168b69;
  font-size:11px;
@@ -57,7 +57,7 @@ footer{text-align:center;padding:30px;color:#8394aa;font-size:12px}
  .price{font-size:19px}
  #cryptoChart{height:360px}
  .controls button{padding:9px 11px}
- #priceCountdown{font-size:10px;padding:4px 5px}
+ #priceCountdown{font-size:10px;padding:5px 7px}
 }
 </style>
 </head>
@@ -138,9 +138,8 @@ let loading=false;
 let priceSocket=null;
 let pricePollRunning=false;
 
-// LIVE PRICE LINE VARIABLES
+// LIVE PRICE LINE
 let livePriceLine=null;
-let previousLivePrice=null;
 
 
 // PRICE DISPLAY
@@ -280,40 +279,46 @@ const candleSeries=chart.addCandlestickSeries({
  borderDownColor:"#ef5350",
  wickUpColor:"#22c993",
  wickDownColor:"#ef5350",
-
  lastValueVisible:false,
  priceLineVisible:false
 });
 
 
-// CREATE PRICE + COUNTDOWN LABEL
+// COUNTDOWN ELEMENT
 const priceCountdown=document.createElement("div");
 priceCountdown.id="priceCountdown";
 chartElement.appendChild(priceCountdown);
 
 
-// CREATE OR UPDATE LIVE DOTTED PRICE LINE
-function updateLivePriceLine(price,isUp){
+// CREATE OR UPDATE NATIVE LIVE PRICE LINE
+function updateLivePriceLine(price,candle){
 
- if(!Number.isFinite(price) || price<=0) return;
+ if(!Number.isFinite(price) || price<=0 || !candle) return;
 
+ // Selected timeframe's current candle decides the color
+ const isUp=candle.close>=candle.open;
  const lineColor=isUp?"#22dfa0":"#ef5350";
 
- // Remove previous line
- if(livePriceLine){
-  candleSeries.removePriceLine(livePriceLine);
+ if(!livePriceLine){
+
+  livePriceLine=candleSeries.createPriceLine({
+   price:price,
+   color:lineColor,
+   lineWidth:1,
+   lineStyle:LightweightCharts.LineStyle.Dotted,
+   axisLabelVisible:true,
+   title:""
+  });
+
+ }else{
+
+  // Update existing line without removing it
+  livePriceLine.applyOptions({
+   price:price,
+   color:lineColor
+  });
+
  }
-
- // Create new dotted live line
- livePriceLine=candleSeries.createPriceLine({
-  price:price,
-  color:lineColor,
-  lineWidth:1,
-  lineStyle:LightweightCharts.LineStyle.Dotted,
-  axisLabelVisible:false,
-  title:""
- });
-
 }
 
 
@@ -354,7 +359,7 @@ function formatCountdown(milliseconds){
 }
 
 
-// UPDATE PRICE + COUNTDOWN LABEL
+// UPDATE PRICE LINE AND COUNTDOWN
 function updatePriceCountdown(){
 
  if(!candles.length){
@@ -365,7 +370,7 @@ function updatePriceCountdown(){
  const last=candles[candles.length-1];
  const duration=getTimeframeMilliseconds();
 
- // Candle countdown
+ // Calculate remaining candle time
  const candleOpenTime=last.time*1000;
  const elapsed=Date.now()-candleOpenTime;
 
@@ -375,35 +380,14 @@ function updatePriceCountdown(){
 
  const countdown=formatCountdown(remaining);
 
+ // Current candle determines live line price and color
  const price=Number(last.close);
+ const isUp=last.close>=last.open;
 
- // Determine live direction
- const isUp=previousLivePrice===null
-  ?price>=last.open
-  :price>=previousLivePrice;
+ updateLivePriceLine(price,last);
 
- // Update dotted line and remember price
- updateLivePriceLine(price,isUp);
- previousLivePrice=price;
-
- // Format live price
- const formattedPrice=price.toLocaleString("en-US",{
-  minimumFractionDigits:2,
-  maximumFractionDigits:2
- });
-
- // Find current price position
- const y=candleSeries.priceToCoordinate(price);
-
- if(y===null || !Number.isFinite(y)){
-  priceCountdown.style.display="none";
-  return;
- }
-
- // Display live price and countdown
- priceCountdown.textContent="$"+formattedPrice+"  "+countdown;
-
- priceCountdown.style.top=y+"px";
+ // Countdown stays fixed at the top-right
+ priceCountdown.textContent="CLOSE IN "+countdown;
 
  priceCountdown.style.background=isUp
   ?"#168b69"
@@ -558,13 +542,11 @@ async function loadCandles(){
 
  priceCountdown.style.display="none";
 
- // Reset old live line and price
+ // Remove old price line when switching pair or timeframe
  if(livePriceLine){
   candleSeries.removePriceLine(livePriceLine);
   livePriceLine=null;
  }
-
- previousLivePrice=null;
 
  if(candleSocket){
   candleSocket.onclose=null;
@@ -602,6 +584,8 @@ async function loadCandles(){
   chart.timeScale().fitContent();
 
   updateStructure();
+
+  // Immediately set correct price and candle color
   updatePriceCountdown();
 
   document.getElementById("chartStatus").textContent=
@@ -660,7 +644,7 @@ function startCandleStream(thisLoad){
 
    candleSeries.update(candle);
 
-   // Update live price line and countdown
+   // Update native price line and countdown
    updatePriceCountdown();
 
    if(k.x) updateStructure();
@@ -725,8 +709,6 @@ window.addEventListener("resize",function(){
  chart.applyOptions({
   width:chartElement.clientWidth
  });
-
- updatePriceCountdown();
 });
 
 
@@ -735,5 +717,5 @@ loadCandles();
 
 </script>
 </body>
- </html>
+                                   </html>
  
