@@ -4,82 +4,39 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NEXORA AI - Crypto Intelligence</title>
+<title>NEXORA AI - Advanced Crypto Intelligence</title>
 
 <script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
 
 <style>
 *{box-sizing:border-box}
-body{
- margin:0;
- background:#080d18;
- color:#f4f7ff;
- font-family:Arial,sans-serif;
-}
-header{
- padding:22px;
- background:#101a2c;
- border-bottom:1px solid #26344b;
-}
-.logo{
- font-size:25px;
- font-weight:900;
- color:#66d9ff;
-}
+body{margin:0;background:#080d18;color:#f4f7ff;font-family:Arial,sans-serif}
+header{padding:22px;background:#101a2c;border-bottom:1px solid #26344b}
+.logo{font-size:25px;font-weight:900;color:#66d9ff}
 header p{color:#9baec7;font-size:13px}
-main{padding:18px;max-width:1200px;margin:auto}
+main{padding:16px;max-width:1200px;margin:auto}
 h2{font-size:19px}
-.cards{
- display:grid;
- grid-template-columns:repeat(2,1fr);
- gap:12px;
-}
-.card,.chart,.analysis{
- background:#111d30;
- border:1px solid #263b55;
- border-radius:14px;
- padding:16px;
-}
+.cards{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.card,.chart,.analysis{background:#111d30;border:1px solid #263b55;border-radius:14px;padding:16px}
 .label{color:#9baec7;font-size:12px}
 .price{font-size:23px;font-weight:bold;margin:10px 0}
 .green{color:#32dfa0}
 .chart,.analysis{margin-top:18px}
-.timeframes{
- display:flex;
- flex-wrap:wrap;
- gap:7px;
- margin:14px 0;
+.controls{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+.controls button{
+ background:#1b2a40;color:#dce8f8;border:1px solid #344966;
+ border-radius:8px;padding:10px 13px;font-weight:bold;cursor:pointer
 }
-.timeframes button{
- background:#1b2a40;
- color:#c8d6e9;
- border:1px solid #344966;
- border-radius:7px;
- padding:10px 13px;
- cursor:pointer;
- font-weight:bold;
-}
-.timeframes button.active{
- background:#1679df;
- color:white;
- border-color:#1679df;
-}
-#cryptoChart{
- height:460px;
- width:100%;
-}
+.controls button.active{background:#1679df;color:white;border-color:#1679df}
+#cryptoChart{width:100%;height:460px}
 .status{color:#32dfa0;font-size:13px}
-footer{
- text-align:center;
- padding:30px;
- color:#8394aa;
- font-size:12px;
-}
+.legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px;font-size:12px;color:#c6d3e5}
+footer{text-align:center;padding:30px;color:#8394aa;font-size:12px}
 @media(max-width:500px){
- main{padding:12px}
+ main{padding:11px}
  .price{font-size:19px}
- #cryptoChart{height:370px}
- .timeframes button{padding:9px 11px}
+ #cryptoChart{height:360px}
+ .controls button{padding:9px 11px}
 }
 </style>
 </head>
@@ -110,11 +67,16 @@ footer{
 </div>
 
 <div class="chart">
- <h2>BTC Live Trading Chart</h2>
+ <h2 id="chartTitle">BTC / USDT Live Chart</h2>
 
- <div class="timeframes" id="timeframes">
+ <div class="controls" id="pairControls">
+  <button class="active" data-pair="BTCUSDT">BTC</button>
+  <button data-pair="ETHUSDT">ETH</button>
+ </div>
+
+ <div class="controls" id="timeControls">
   <button data-time="1m">1m</button>
-  <button data-time="5m" class="active">5m</button>
+  <button class="active" data-time="5m">5m</button>
   <button data-time="15m">15m</button>
   <button data-time="30m">30m</button>
   <button data-time="1h">1H</button>
@@ -123,36 +85,45 @@ footer{
  </div>
 
  <div id="cryptoChart"></div>
- <p class="label" id="chartStatus">Loading BTC market data...</p>
+ <p class="label" id="chartStatus">Loading market data...</p>
 </div>
 
 <div class="analysis">
  <h2>Market Structure Analysis</h2>
- <p class="status" id="structureStatus">Waiting for market data...</p>
+ <p class="status" id="structureStatus">Waiting for data...</p>
  <p id="structureResult">Market structure will appear here.</p>
- <p class="label">
-  HH = Higher High · HL = Higher Low<br>
-  LH = Lower High · LL = Lower Low
- </p>
+
+ <div class="legend">
+  <span>🟢 HH / Bullish BOS</span>
+  <span>🔵 HL</span>
+  <span>🟠 LH</span>
+  <span>🔴 LL / Bearish BOS</span>
+  <span>🟣 CHoCH</span>
+ </div>
 </div>
 
 <div class="analysis">
  <h2>AI Market Analysis</h2>
- <p id="aiStatus">AI analysis module is being prepared.</p>
- <p class="label">
-  Educational analysis only. No guaranteed trading signals or profits.
- </p>
+ <p id="aiStatus">Advanced AI analysis module is being prepared.</p>
+ <p class="label">Educational analysis only. No guaranteed signals or profits.</p>
 </div>
 
 </main>
 
 <footer>NEXORA AI · Crypto Intelligence Platform</footer>
 
-<script src="/static/market_structure.js"></script>
-
 <script>
 
-// PRICE DISPLAY
+// GLOBAL SETTINGS
+let currentPair="BTCUSDT";
+let currentTimeframe="5m";
+let candles=[];
+let candleSocket=null;
+let loadNumber=0;
+let loading=false;
+
+
+// PRICE FORMAT
 function showPrice(id,value){
  document.getElementById(id).textContent =
  "$"+Number(value).toLocaleString("en-US",{
@@ -173,7 +144,6 @@ function connectLivePrices(){
   try{
    const message=JSON.parse(event.data);
    const trade=message.data;
-
    if(!trade || !trade.s || !trade.p) return;
 
    if(trade.s==="BTCUSDT") showPrice("btc",trade.p);
@@ -210,9 +180,7 @@ const chart=LightweightCharts.createChart(chartElement,{
   vertLines:{color:"#1c2b40"},
   horzLines:{color:"#1c2b40"}
  },
- rightPriceScale:{
-  borderColor:"#33445c"
- },
+ rightPriceScale:{borderColor:"#33445c"},
  timeScale:{
   borderColor:"#33445c",
   timeVisible:true,
@@ -232,57 +200,187 @@ const candleSeries=chart.addCandlestickSeries({
  wickDownColor:"#ef5350"
 });
 
-let candles=[];
-let currentTimeframe="5m";
-let candleSocket=null;
-let loading=false;
 
+// MARKET STRUCTURE DETECTION
+function detectStructure(data){
 
-// MARKET STRUCTURE
-function updateMarketStructure(){
+ const markers=[];
+ const pivots=[];
 
- if(typeof window.findMarketStructure!=="function"){
-  document.getElementById("structureStatus").textContent =
-   "Market structure file not loaded.";
-  return;
+ if(data.length<7) return markers;
+
+ // FIND CONFIRMED SWING POINTS
+ for(let i=2;i<data.length-2;i++){
+
+  const c=data[i];
+
+  const swingHigh=
+   c.high>data[i-1].high &&
+   c.high>data[i-2].high &&
+   c.high>data[i+1].high &&
+   c.high>data[i+2].high;
+
+  const swingLow=
+   c.low<data[i-1].low &&
+   c.low<data[i-2].low &&
+   c.low<data[i+1].low &&
+   c.low<data[i+2].low;
+
+  if(swingHigh){
+   pivots.push({
+    index:i,
+    type:"HIGH",
+    price:c.high
+   });
+  }
+
+  if(swingLow){
+   pivots.push({
+    index:i,
+    type:"LOW",
+    price:c.low
+   });
+  }
  }
 
- const results=window.findMarketStructure(candles);
+ pivots.sort((a,b)=>a.index-b.index);
 
- const markers=results.map(item=>({
-  time:candles[item.index].time,
-  position:
-   item.type==="HH" || item.type==="LH"
-    ? "aboveBar"
-    : "belowBar",
-  color:
-   item.type==="HH" ? "#22c993" :
-   item.type==="HL" ? "#66d9ff" :
-   item.type==="LH" ? "#ffb74d" :
-   item.type==="LL" ? "#ef5350" :
-   "#ffffff",
-  shape:"circle",
-  text:item.type
- }));
+ let lastHigh=null;
+ let lastLow=null;
+ let trend=0;
+ let highBroken=false;
+ let lowBroken=false;
 
- candleSeries.setMarkers(markers);
+ let pivotPosition=0;
 
- const latest=results.slice(-8);
+ // CHECK STRUCTURE AND BREAKS
+ for(let i=4;i<data.length;i++){
 
- document.getElementById("structureStatus").textContent =
-  "Structure updated · BTC "+currentTimeframe.toUpperCase();
+  // Only use swings confirmed by two later candles
+  while(
+   pivotPosition<pivots.length &&
+   pivots[pivotPosition].index<=i-2
+  ){
 
- document.getElementById("structureResult").textContent =
-  latest.length
-   ? latest.map(item=>item.type).join("  ·  ")
-   : "Waiting for confirmed swing points...";
+   const p=pivots[pivotPosition];
+
+   if(p.type==="HIGH"){
+
+    const label=lastHigh===null
+     ? "Swing High"
+     : p.price>lastHigh.price ? "HH":"LH";
+
+    markers.push({
+     time:data[p.index].time,
+     position:"aboveBar",
+     color:label==="HH"?"#22c993":"#ffb74d",
+     shape:"circle",
+     text:label
+    });
+
+    lastHigh=p;
+    highBroken=false;
+
+   }else{
+
+    const label=lastLow===null
+     ? "Swing Low"
+     : p.price>lastLow.price ? "HL":"LL";
+
+    markers.push({
+     time:data[p.index].time,
+     position:"belowBar",
+     color:label==="HL"?"#66d9ff":"#ef5350",
+     shape:"circle",
+     text:label
+    });
+
+    lastLow=p;
+    lowBroken=false;
+   }
+
+   pivotPosition++;
+  }
+
+  const candle=data[i];
+
+  // Bullish break
+  if(
+   lastHigh &&
+   !highBroken &&
+   candle.close>lastHigh.price
+  ){
+
+   const label=trend===-1
+    ? "Bullish CHoCH"
+    : "Bullish BOS";
+
+   markers.push({
+    time:candle.time,
+    position:"aboveBar",
+    color:trend===-1?"#c084fc":"#22c993",
+    shape:"arrowUp",
+    text:label
+   });
+
+   highBroken=true;
+   trend=1;
+  }
+
+  // Bearish break
+  if(
+   lastLow &&
+   !lowBroken &&
+   candle.close<lastLow.price
+  ){
+
+   const label=trend===1
+    ? "Bearish CHoCH"
+    : "Bearish BOS";
+
+   markers.push({
+    time:candle.time,
+    position:"belowBar",
+    color:trend===1?"#c084fc":"#ef5350",
+    shape:"arrowDown",
+    text:label
+   });
+
+   lowBroken=true;
+   trend=-1;
+  }
+ }
+
+ markers.sort((a,b)=>a.time-b.time);
+
+ return markers;
 }
 
 
-// LOAD SELECTED TIMEFRAME
+// UPDATE STRUCTURE DISPLAY
+function updateStructure(){
+
+ const markers=detectStructure(candles);
+
+ candleSeries.setMarkers(markers);
+
+ document.getElementById("structureStatus").textContent=
+  currentPair+" · "+currentTimeframe.toUpperCase()+
+  " · Structure calculated";
+
+ const latest=markers.slice(-8);
+
+ document.getElementById("structureResult").textContent=
+  latest.length
+   ? latest.map(m=>m.text).join("  |  ")
+   : "Waiting for confirmed swing points and breakouts...";
+}
+
+
+// LOAD CHART DATA
 async function loadCandles(){
 
- if(loading) return;
+ const thisLoad=++loadNumber;
  loading=true;
 
  if(candleSocket){
@@ -294,23 +392,27 @@ async function loadCandles(){
  candles=[];
  candleSeries.setData([]);
 
- document.getElementById("chartStatus").textContent =
-  "Loading "+currentTimeframe.toUpperCase()+" candles...";
+ document.getElementById("chartTitle").textContent=
+  currentPair.replace("USDT","")+" / USDT Live Chart";
 
- document.getElementById("structureStatus").textContent =
-  "Calculating market structure...";
+ document.getElementById("chartStatus").textContent=
+  "Loading "+currentPair+" "+currentTimeframe+"...";
 
  try{
 
-  const response=await fetch(
-   "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval="+currentTimeframe+"&limit=500"
-  );
+  const url=
+   "https://api.binance.com/api/v3/klines?symbol="+
+   currentPair+"&interval="+currentTimeframe+"&limit=500";
+
+  const response=await fetch(url);
 
   if(!response.ok){
-   throw new Error("Binance data unavailable");
+   throw new Error("Market data unavailable");
   }
 
   const data=await response.json();
+
+  if(thisLoad!==loadNumber) return;
 
   candles=data.map(item=>({
    time:Math.floor(item[0]/1000),
@@ -323,40 +425,44 @@ async function loadCandles(){
   candleSeries.setData(candles);
   chart.timeScale().fitContent();
 
-  document.getElementById("chartStatus").textContent =
-   "Live BTC/USDT · "+currentTimeframe.toUpperCase();
+  updateStructure();
 
-  updateMarketStructure();
+  document.getElementById("chartStatus").textContent=
+   currentPair+" · "+currentTimeframe.toUpperCase()+" · Live";
 
-  startCandleStream();
+  startCandleStream(thisLoad);
 
  }catch(error){
 
-  document.getElementById("chartStatus").textContent =
-   "Unable to load candles. Please try again.";
+  if(thisLoad===loadNumber){
+   document.getElementById("chartStatus").textContent=
+    "Unable to load market data. Please try again.";
 
-  document.getElementById("structureStatus").textContent =
-   "Market data unavailable.";
+   document.getElementById("structureStatus").textContent=
+    "Market data unavailable.";
 
-  console.log("Chart error:",error);
+   console.log("Chart error:",error);
+  }
 
  }finally{
-  loading=false;
+  if(thisLoad===loadNumber) loading=false;
  }
-
 }
 
 
 // LIVE CANDLE STREAM
-function startCandleStream(){
+function startCandleStream(thisLoad){
 
  const socket=new WebSocket(
-  "wss://stream.binance.com:9443/ws/btcusdt@kline_"+currentTimeframe
+  "wss://stream.binance.com:9443/ws/"+
+  currentPair.toLowerCase()+"@kline_"+currentTimeframe
  );
 
  candleSocket=socket;
 
  socket.onmessage=function(event){
+
+  if(thisLoad!==loadNumber) return;
 
   try{
 
@@ -383,21 +489,21 @@ function startCandleStream(){
 
    candleSeries.update(candle);
 
+   // Recalculate after candle closes
    if(k.x){
-    updateMarketStructure();
+    updateStructure();
    }
 
   }catch(error){
    console.log("Candle stream error:",error);
   }
-
  };
 
  socket.onclose=function(){
-  if(candleSocket===socket){
+  if(thisLoad===loadNumber){
    setTimeout(function(){
-    if(!loading && candleSocket===socket){
-     startCandleStream();
+    if(thisLoad===loadNumber && !loading){
+     startCandleStream(thisLoad);
     }
    },5000);
   }
@@ -406,35 +512,50 @@ function startCandleStream(){
  socket.onerror=function(){
   socket.close();
  };
-
 }
 
 
-// TIMEFRAME BUTTONS
-document.querySelectorAll("#timeframes button").forEach(button=>{
+// PAIR SWITCH
+document.querySelectorAll("#pairControls button").forEach(button=>{
 
  button.addEventListener("click",function(){
 
-  const selected=this.dataset.time;
+  if(currentPair===this.dataset.pair) return;
 
-  if(selected===currentTimeframe) return;
+  currentPair=this.dataset.pair;
 
-  currentTimeframe=selected;
-
-  document.querySelectorAll("#timeframes button").forEach(btn=>{
+  document.querySelectorAll("#pairControls button").forEach(btn=>{
    btn.classList.remove("active");
   });
 
   this.classList.add("active");
 
   loadCandles();
-
  });
-
 });
 
 
-// RESPONSIVE CHART
+// TIMEFRAME SWITCH
+document.querySelectorAll("#timeControls button").forEach(button=>{
+
+ button.addEventListener("click",function(){
+
+  if(currentTimeframe===this.dataset.time) return;
+
+  currentTimeframe=this.dataset.time;
+
+  document.querySelectorAll("#timeControls button").forEach(btn=>{
+   btn.classList.remove("active");
+  });
+
+  this.classList.add("active");
+
+  loadCandles();
+ });
+});
+
+
+// RESIZE CHART
 window.addEventListener("resize",function(){
  chart.applyOptions({
   width:chartElement.clientWidth
@@ -448,5 +569,4 @@ loadCandles();
 </script>
 
 </body>
- </html>
- 
+</html>
