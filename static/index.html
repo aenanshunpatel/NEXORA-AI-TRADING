@@ -742,7 +742,7 @@ function calculateRSI(values,period=14){
  for(let i=1;i<=period;i++){
   const change=values[i]-values[i-1];
   if(change>0)gains+=change;
-  else loss-=change;
+  else losses-=change;
  }
 
  let avgGain=gains/period;
