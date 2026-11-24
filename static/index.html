@@ -52,6 +52,21 @@ footer{text-align:center;padding:30px;color:#8394aa;font-size:12px}
 .small-button{background:#1679df;color:white;border:0;border-radius:8px;padding:9px 12px;font-weight:bold;cursor:pointer}
 .small-button:disabled{opacity:.5;cursor:wait}
 
+
+/* BACKTESTING */
+.backtest-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}
+.backtest-stat{background:#0b1525;border:1px solid #263b55;border-radius:9px;padding:12px;min-width:0}
+.backtest-stat .value{font-size:19px;font-weight:900;margin-top:7px;overflow-wrap:anywhere}
+.backtest-controls{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin:14px 0}
+.backtest-field{display:flex;flex-direction:column;gap:6px;min-width:110px;flex:1}
+.backtest-field label{font-size:12px;color:#9baec7}
+.backtest-field select,.backtest-field input{width:100%;background:#0b1525;color:#f4f7ff;border:1px solid #344966;border-radius:8px;padding:10px}
+.backtest-table-wrap{overflow-x:auto;margin-top:12px}
+.backtest-table{width:100%;border-collapse:collapse;font-size:12px;min-width:480px}
+.backtest-table th,.backtest-table td{padding:9px;text-align:left;border-bottom:1px solid #263b55;white-space:nowrap}
+.backtest-table th{color:#9baec7}
+@media(max-width:600px){.backtest-grid{grid-template-columns:repeat(2,1fr)}}
+
 @media(max-width:600px){
  main{padding:11px}
  .price{font-size:19px}
@@ -185,6 +200,32 @@ footer{text-align:center;padding:30px;color:#8394aa;font-size:12px}
   <span>🔴 LL / Bearish BOS</span>
   <span>🟣 CHoCH</span>
  </div>
+</div>
+
+
+<!-- BACKTESTING SYSTEM -->
+<div class="analysis" id="backtestingPanel">
+ <h2>⏪ NEXORA AI · Backtesting System</h2>
+ <p class="label">Test the existing EMA, RSI and MACD signal rules on historical Binance candles. Historical simulation only; fees and slippage are not included.</p>
+ <div class="backtest-controls">
+  <div class="backtest-field"><label for="backtestPair">TRADING PAIR</label><select id="backtestPair"><option value="BTCUSDT">BTC / USDT</option><option value="ETHUSDT">ETH / USDT</option></select></div>
+  <div class="backtest-field"><label for="backtestTimeframe">TIMEFRAME</label><select id="backtestTimeframe"><option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option><option value="1h">1H</option><option value="4h">4H</option><option value="1d">1D</option></select></div>
+  <div class="backtest-field"><label for="backtestLimit">HISTORICAL CANDLES</label><select id="backtestLimit"><option value="500">500</option><option value="1000" selected>1000</option></select></div>
+  <button class="small-button" id="runBacktest">Run Backtest</button>
+ </div>
+ <p class="signal-note" id="backtestStatus">Choose settings and run a historical test.</p>
+ <div class="backtest-grid">
+  <div class="backtest-stat"><div class="label">TOTAL TRADES</div><div class="value" id="btTrades">--</div></div>
+  <div class="backtest-stat"><div class="label">WIN RATE</div><div class="value buy" id="btWinRate">--</div></div>
+  <div class="backtest-stat"><div class="label">NET RETURN</div><div class="value" id="btReturn">--</div></div>
+  <div class="backtest-stat"><div class="label">WINNING TRADES</div><div class="value buy" id="btWins">--</div></div>
+  <div class="backtest-stat"><div class="label">LOSING TRADES</div><div class="value sell" id="btLosses">--</div></div>
+  <div class="backtest-stat"><div class="label">PROFIT FACTOR</div><div class="value" id="btProfitFactor">--</div></div>
+ </div>
+ <div class="backtest-table-wrap">
+  <table class="backtest-table"><thead><tr><th>TIME</th><th>SIDE</th><th>ENTRY</th><th>EXIT</th><th>RESULT</th><th>RETURN</th></tr></thead><tbody id="backtestResults"><tr><td colspan="6">No backtest results yet.</td></tr></tbody></table>
+ </div>
+ <p class="signal-note">Method: signal is calculated only from candles available at that time; entry is at the next candle open. Stop loss is 1.5 × ATR and take profit is 2R. If stop and target are both touched in one candle, stop loss is counted first (conservative assumption). Results exclude trading fees, spread and slippage.</p>
 </div>
 
 <div class="analysis">
@@ -991,6 +1032,86 @@ async function runCombinedAnalysis(){
  }
 }
 
+
+
+// HISTORICAL BACKTESTING
+async function runBacktest(){
+ const button=document.getElementById("runBacktest");
+ const status=document.getElementById("backtestStatus");
+ button.disabled=true;
+ button.textContent="Testing...";
+ status.textContent="Downloading historical candles...";
+ document.getElementById("backtestResults").innerHTML='<tr><td colspan="6">Backtest running...</td></tr>';
+ try{
+  const pair=document.getElementById("backtestPair").value;
+  const timeframe=document.getElementById("backtestTimeframe").value;
+  const limit=Number(document.getElementById("backtestLimit").value);
+  const path="/api/v3/klines?symbol="+pair+"&interval="+timeframe+"&limit="+limit;
+  const raw=await fetchFromBinance(path);
+  const history=raw.map(item=>({
+   time:Math.floor(item[0]/1000),open:Number(item[1]),high:Number(item[2]),low:Number(item[3]),close:Number(item[4])
+  }));
+  if(history.length<220)throw new Error("Not enough historical candles to test this strategy.");
+
+  const trades=[];
+  let i=210;
+  while(i<history.length-1){
+   const signal=analyzeTimeframe(history.slice(0,i+1));
+   if((signal.direction!=="BUY"&&signal.direction!=="SELL")||!Number.isFinite(signal.atr)||signal.atr<=0){i++;continue;}
+   const side=signal.direction;
+   const entry=history[i+1].open;
+   const risk=signal.atr*1.5;
+   const stop=side==="BUY"?entry-risk:entry+risk;
+   const target=side==="BUY"?entry+risk*2:entry-risk*2;
+   let exit=history[history.length-1].close;
+   let exitIndex=history.length-1;
+   let outcome="OPEN";
+   for(let j=i+1;j<history.length;j++){
+    const bar=history[j];
+    const stopHit=side==="BUY"?bar.low<=stop:bar.high>=stop;
+    const targetHit=side==="BUY"?bar.high>=target:bar.low<=target;
+    if(stopHit){exit=stop;exitIndex=j;outcome="LOSS";break;}
+    if(targetHit){exit=target;exitIndex=j;outcome="WIN";break;}
+   }
+   const pct=(side==="BUY"?(exit-entry)/entry:(entry-exit)/entry)*100;
+   if(outcome==="OPEN")outcome=pct>=0?"WIN":"LOSS";
+   trades.push({time:history[i+1].time,side,entry,exit,outcome,pct});
+   // One position at a time: continue after the exit candle.
+   i=Math.max(i+1,exitIndex+1);
+  }
+
+  const wins=trades.filter(t=>t.pct>0);
+  const losses=trades.filter(t=>t.pct<0);
+  const grossProfit=wins.reduce((sum,t)=>sum+t.pct,0);
+  const grossLoss=Math.abs(losses.reduce((sum,t)=>sum+t.pct,0));
+  const net=trades.reduce((sum,t)=>sum+t.pct,0);
+  const winRate=trades.length?wins.length/trades.length*100:0;
+  const pf=grossLoss?grossProfit/grossLoss:(grossProfit?Infinity:0);
+  document.getElementById("btTrades").textContent=String(trades.length);
+  document.getElementById("btWinRate").textContent=trades.length?winRate.toFixed(1)+"%":"0.0%";
+  document.getElementById("btReturn").textContent=(net>=0?"+":"")+net.toFixed(2)+"%";
+  document.getElementById("btReturn").className="value "+(net>=0?"buy":"sell");
+  document.getElementById("btWins").textContent=String(wins.length);
+  document.getElementById("btLosses").textContent=String(losses.length);
+  document.getElementById("btProfitFactor").textContent=pf===Infinity?"∞":pf.toFixed(2);
+  const rows=trades.slice(-20).reverse();
+  document.getElementById("backtestResults").innerHTML=rows.length?rows.map(t=>{
+   const date=new Date(t.time*1000).toLocaleString();
+   const cls=t.pct>=0?"buy":"sell";
+   return '<tr><td>'+date+'</td><td class="'+(t.side==="BUY"?"buy":"sell")+'">'+t.side+'</td><td>'+formatPrice(t.entry)+'</td><td>'+formatPrice(t.exit)+'</td><td class="'+cls+'">'+t.outcome+'</td><td class="'+cls+'">'+(t.pct>=0?"+":"")+t.pct.toFixed(2)+'%</td></tr>';
+  }).join(""):'<tr><td colspan="6">No valid trades found for these settings.</td></tr>';
+  status.textContent=pair+" · "+timeframe.toUpperCase()+" · Tested "+history.length+" candles · Showing latest 20 trades";
+ }catch(error){
+  console.error("Backtest error:",error);
+  status.textContent="Backtest failed: "+error.message;
+  document.getElementById("backtestResults").innerHTML='<tr><td colspan="6">Unable to complete backtest.</td></tr>';
+ }finally{
+  button.disabled=false;
+  button.textContent="Run Backtest";
+ }
+}
+
+document.getElementById("runBacktest").addEventListener("click",runBacktest);
 
 // MANUAL REFRESH
 document.getElementById("refreshSignal").addEventListener("click",()=>{
